@@ -1,0 +1,8 @@
+# Server sees everything under eco/.
+user server
+topic readwrite eco/#
+
+# Simulated tablet for user 1: publish on its own up, read its own down.
+user sim-device-1
+topic write eco/user/1/device/sim-device-1/up
+topic read eco/user/1/device/sim-device-1/down
