@@ -1,0 +1,30 @@
+name: eco-prod
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      MQTT_ENABLED: "false"
+      SCHEDULER_ENABLED: "false"
+      OUTBOX_DRY_RUN: "true"
+      WORK_DB_PATH: /app/server/data/work.db
+      PERSONAL_DB_PATH: /app/server/data/personal.db
+      BACKUP_DIR: /app/server/backups
+    volumes:
+      - ./server/data:/app/server/data
+      - ./server/backups:/app/server/backups
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend

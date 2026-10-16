@@ -9,3 +9,9 @@ __pycache__/
 node_modules/
 dist/
 infra/mosquitto/passwd
+# SQLite runtime files
+*.db-wal
+*.db-shm
+
+# Keep environment templates tracked
+!.env.example
