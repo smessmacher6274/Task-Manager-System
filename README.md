@@ -1,5 +1,19 @@
 # Central Ecosystem
 
+Existing ESP32 pad integration is available through an optional MQTT compatibility
+adapter. See [pad setup and cutover](firmware/README.md) and
+`docker-compose.pad.yml` for the website deployment with a broker.
+
+When `PAD_ENABLED=true`, the bridge supports both the legacy v1 topic and the
+v2 dual-list protocol. Both v2 lists bind to `PAD_USER_ID`: `personal` always
+uses the personal database and `work` always uses the work database, regardless
+of `PAD_DB`. Each list has its own retained `state`, `commands`, and `results`
+topics under `notepad/v2/devices/tablet-001/lists/{personal,work}/`; the shared
+presence topic is `notepad/v2/devices/tablet-001/presence`. A result's
+`revision` is the list snapshot revision. Successful results also include
+`item_revision`, which clients use to chain later edits to that item. Snapshot
+items keep their per-item version in `items[].revision`.
+
 See `../CentralEcosystemPlan.md` for the design. Layout: `server/` (Python), `web/` (React + Vite),
 `infra/` (local Docker stack), `firmware/` (later).
 
@@ -45,6 +59,35 @@ simulated tablet, and the MQTT test fails.
   stale Unix sockets from an unclean shutdown. Quit Docker Desktop, then delete them from WSL
   (`rm /mnt/c/Users/<you>/AppData/Local/docker-secrets-engine/engine.sock /mnt/c/Users/<you>/AppData/Local/Docker/run/*`)
   and start Docker again. Windows tools can't delete them.
+
+## Verification and Git synchronization (2026-10-21)
+
+The user verified the combined local and Raspberry Pi changes and reported that
+they work. Automated test output and individual hardware-check results were not
+recorded in this verification note.
+
+Local `main` was fast-forwarded to Raspberry Pi commit `884ad59`. Local work was
+saved with `git stash push -u`, then reapplied. The `firmware/README.md` conflict
+was resolved by retaining the local v2 dual-list documentation. The previously
+untracked `docker-compose.pad.yml`, `server/eco/mqtt/pad.py`, and
+`server/tests/test_pad.py` matched the incoming files in content; only executable
+permissions differed. The local README, environment template, firmware guide,
+and `server/tests/test_pad_v2.py` remain for review and commit. Keep the backup
+stash until these changes are committed and verified.
+
+To repeat the server checks in WSL, activate the environment from `server/`,
+then run:
+
+```bash
+source .venv-wsl/bin/activate
+python -m pytest tests/test_pad.py tests/test_pad_v2.py -v
+python -m pytest -m "not redmine and not mqtt"
+```
+
+Hardware checks: create a task on the pad and verify it on the website; complete
+and reopen from both sides; check personal/work isolation; queue an edit while
+offline and reconnect; reboot and check persistence. Also edit a task on the web
+while the pad is offline and confirm stale pad edits do not overwrite it.
 
 ## Web UI (Phase 2)
 

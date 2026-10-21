@@ -16,14 +16,17 @@ PAD_USER_ID=1
 PAD_DB=personal
 ```
 
-Use `PAD_DB=work` for work tasks. One pad shows one user's database: up to 50
-tasks, open first and then completed tasks when space permits. New pad captures
-use the default category. Work captures enter triage; completion uses the existing
-outbox/Redmine flow. Reopening sets status to `new`. Existing server titles display
-with control characters replaced and at most 120 UTF-8 bytes; full server titles
-are preserved. Additional tasks remain on the website. Pad creates are rejected
-when the selected database already has 50 nondeleted tasks. Web/Redmine changes
-reach the pad within about two seconds while connected.
+The current v2 firmware shows personal and work lists together. Both lists use
+`PAD_USER_ID`; personal always maps to the personal database and work always maps
+to the work database. `PAD_DB` only selects the database for legacy v1 firmware.
+Each list shows up to 50 tasks, open first and then completed tasks when space
+permits. New captures use the list's default category. Work captures enter triage;
+completion uses the existing outbox/Redmine flow. Reopening sets status to `new`.
+Existing server titles display with control characters replaced and at most 120
+UTF-8 bytes; full server titles are preserved. Additional tasks remain on the
+website. Creates are rejected when that list's database already has 50
+nondeleted tasks. Web/Redmine changes reach the pad within about two seconds
+while connected.
 
 The updated `infra/mosquitto/acl` grants the required server and pad topics.
 Add a password interactively from `infra`:
@@ -67,27 +70,41 @@ python setup_task_server.py --host YOUR_SERVER_LAN_IP
 Enter the password created for `tablet-001`. This updates only the ignored local
 MQTT settings in `main/network_config.h`, preserving Wi-Fi credentials. Build
 and flash using your activated ESP-IDF environment and working sdkconfig.
-No firmware protocol migration is required. OTA topics are not granted.
+The current firmware uses the v2 dual-list MQTT topics. OTA topics are not
+granted.
 
-### First cutover from LocalMQTT
+### Flashing current firmware
 
-Before switching, reconnect to the old server and let pending pad edits finish.
-Preserve any old tasks you need from its web UI/database; this adapter does not
-import that database. The pad caches its old revision. A lower new-server revision
-will not replace it, so reset **only** the `task_store` partition before first
-connection to the new server, using ESP-IDF's `parttool.py` and the actual flashed
-partition table (`erase_partition --partition-name task_store`). This deletes
-cached tasks and pending edits: preserve them first. Do not erase all flash;
-firmware and calibration live elsewhere. Changing PAD_DB/PAD_USER_ID also requires
-a deliberate cache cutover. No device data has been erased by this change.
+The current firmware stores list data in the `task_v2` NVS partition at offset
+`0x330000`, size `0x20000`. Keep the old `task_store` partition and its legacy
+cache intact; the new firmware does not import that cache. Flash the complete
+USB firmware image, including its partition table, so the new partition layout
+is installed. The cache cutover does not require an erase command.
+
+### Legacy v1 cache cutover
+
+This applies only when continuing to use legacy v1 firmware and changing its
+server, `PAD_DB`, or `PAD_USER_ID` binding. Before switching, reconnect to the
+old server and let pending pad edits finish. Preserve any old tasks you need from
+its web UI/database; the adapter does not import that database. Legacy v1 caches
+its old revision, so a lower new-server revision may not replace it. If a cache
+reset is needed, erase only `task_store` with ESP-IDF `parttool.py` using the
+actual flashed partition table (`erase_partition --partition-name task_store`).
+That deletes cached tasks and pending edits; preserve them first. Do not erase
+all flash.
 
 ## Protocol and verification
 
-Topics: `notepad/v1/devices/tablet-001/{commands,results,state,presence}`.
-State is retained; results are not. SQLite stores per-item revision fingerprints
-and exact command receipts atomically with pad mutations. Stale checkbox edits
-return `conflict`; retries return the original result. The device identity is
-fixed: use a separate broker for another pad/user.
+Legacy topics: `notepad/v1/devices/tablet-001/{commands,results,state,presence}`.
+V2 snapshots use `notepad/v2/devices/tablet-001/lists/{personal,work}/state`,
+each with matching `commands` and `results`; presence is shared at
+`notepad/v2/devices/tablet-001/presence`. States are retained; results are not.
+SQLite stores per-item revision fingerprints and exact command receipts
+atomically with pad mutations. V2 state has a list-wide `revision` and each
+snapshot item has its own `revision`; successful results include the new
+`item_revision` for chaining edits. Stale checkbox edits return `conflict`;
+retries return the original result. The device identity is fixed: use a separate
+broker for another pad/user.
 
 After installing `.[dev]`, run from `server`:
 
