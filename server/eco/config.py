@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +36,11 @@ class Settings(BaseSettings):
     mqtt_username: str = "server"
     mqtt_password: str = ""
     mqtt_enabled: bool = True
+
+    # Existing 2040Bluetooth firmware, explicitly bound to one user's database.
+    pad_enabled: bool = False
+    pad_user_id: int = 1
+    pad_db: Literal["work", "personal"] = "personal"
 
     smtp_host: str = "127.0.0.1"
     smtp_port: int = 1025

@@ -1,0 +1,25 @@
+# Optional ESP32 pad support alongside the existing production website.
+# docker compose -f docker-compose.prod.yml -f docker-compose.pad.yml up --build -d
+services:
+  backend:
+    environment:
+      MQTT_ENABLED: "true"
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_USERNAME: server
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?Set MQTT_PASSWORD to the broker server password}
+      PAD_ENABLED: "true"
+      PAD_USER_ID: ${PAD_USER_ID:-1}
+      PAD_DB: ${PAD_DB:-personal}
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/passwd:/mosquitto/config/passwd
+      - ./infra/mosquitto/acl:/mosquitto/config/acl:ro

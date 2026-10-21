@@ -23,6 +23,22 @@ class Base(DeclarativeBase):
     pass
 
 
+class PadState(Base):
+    """Durable revision ledger for the existing tablet-001 wire protocol."""
+    __tablename__ = "pad_state"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    ledger_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class PadReceipt(Base):
+    __tablename__ = "pad_receipts"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    command_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_json: Mapped[str] = mapped_column(Text)
+    result_json: Mapped[str] = mapped_column(Text)
+
+
 # Local status vocabulary mirrors Redmine status names (lowercase, underscores)
 # so the three-way merge is lossless. Tablet/server items start as "new".
 CLOSED_STATUSES = {"closed", "rejected"}

@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import uuid as uuidlib
+import threading
 from datetime import date, datetime, timezone
 
 import paho.mqtt.client as mqtt
@@ -19,6 +20,7 @@ from eco import items as svc
 from eco.config import Settings
 from eco.db import Databases
 from eco.models import Category, Device, IngestLog, Item, User, utcnow
+from eco.mqtt.pad import PadAdapter, PadListAdapter, COMMANDS, PRESENCE, STATE
 
 log = logging.getLogger(__name__)
 
@@ -166,6 +168,13 @@ class MqttBridge:
     def __init__(self, dbs: Databases, settings: Settings):
         self.settings = settings
         self.ingestor = Ingestor(dbs, settings)
+        self.pad = PadAdapter(dbs, settings) if settings.pad_enabled else None
+        self.pad_lists = ([PadListAdapter(dbs, settings, name) for name in ("personal", "work")]
+                          if settings.pad_enabled else [])
+        self._pad_lock = threading.Lock()
+        self._stopped = threading.Event()
+        self._pad_thread = None
+        self._pad_payload = {}
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                                   client_id=f"eco-server-{uuidlib.uuid4().hex[:8]}")
         self.client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
@@ -175,8 +184,15 @@ class MqttBridge:
     def start(self) -> None:
         self.client.connect_async(self.settings.mqtt_host, self.settings.mqtt_port, keepalive=30)
         self.client.loop_start()
+        if self.pad:
+            self._stopped.clear()
+            self._pad_thread = threading.Thread(target=self._poll_pad, name="pad-snapshot", daemon=True)
+            self._pad_thread.start()
 
     def stop(self) -> None:
+        self._stopped.set()
+        if self._pad_thread:
+            self._pad_thread.join()
         self.client.loop_stop()
         self.client.disconnect()
 
@@ -185,11 +201,57 @@ class MqttBridge:
             log.error("MQTT connect failed: %s", reason_code)
             return
         client.subscribe("eco/user/+/device/+/up", qos=1)
+        if self.pad:
+            topics = [(COMMANDS, 1), (PRESENCE, 1)]
+            for adapter in self.pad_lists:
+                topics.append((adapter.commands_topic, 1))
+            if self.pad_lists:
+                topics.append((self.pad_lists[0].presence_topic, 1))
+            client.subscribe(topics)
+            # Broker persistence may be disabled, so republish on every connection.
+            with self._pad_lock:
+                self._pad_payload.clear()
         log.info("MQTT connected, subscribed")
 
     def _on_message(self, client, userdata, msg):
         try:
+            v2_by_command = {a.commands_topic: a for a in self.pad_lists}
+            v2_by_presence = {a.presence_topic: a for a in self.pad_lists}
+            if self.pad and (msg.topic in (COMMANDS, PRESENCE) or
+                             msg.topic in v2_by_command or msg.topic in v2_by_presence):
+                with self._pad_lock:
+                    command_topic = msg.topic in (COMMANDS, *v2_by_command.keys())
+                    if command_topic:
+                        adapter = v2_by_command.get(msg.topic) or self.pad
+                        if msg.retain:
+                            return  # never execute retained commands on server startup
+                        for topic, payload in adapter.handle(msg.payload):
+                            client.publish(topic, payload, qos=1,
+                                           retain=topic == STATE or topic.endswith("/state"))
+                    else:
+                        adapters = self.pad_lists if msg.topic in v2_by_presence else []
+                        if msg.topic == PRESENCE:
+                            adapters = [self.pad, *self.pad_lists]
+                        for adapter in adapters:
+                            client.publish(adapter.state_topic, adapter.snapshot(), qos=1, retain=True)
+                return
             for topic, payload in self.ingestor.handle(msg.topic, msg.payload):
                 client.publish(topic, payload, qos=1)
         except Exception:
             log.exception("MQTT message handling failed on %s", msg.topic)
+
+    def _poll_pad(self):
+        while not self._stopped.is_set():
+            try:
+                if self.client.is_connected():
+                    with self._pad_lock:
+                        for adapter in [self.pad, *self.pad_lists]:
+                            payload = adapter.snapshot()
+                            topic = adapter.state_topic
+                            if payload != self._pad_payload.get(topic):
+                                info = self.client.publish(topic, payload, qos=1, retain=True)
+                                if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                                    self._pad_payload[topic] = payload
+            except Exception:
+                log.exception("Pad snapshot publication failed")
+            self._stopped.wait(2)

@@ -1,8 +1,30 @@
 # Server sees everything under eco/.
 user server
 topic readwrite eco/#
+topic readwrite notepad/v1/devices/tablet-001/#
+topic readwrite notepad/v2/devices/tablet-001/lists/personal/state
+topic readwrite notepad/v2/devices/tablet-001/lists/personal/commands
+topic readwrite notepad/v2/devices/tablet-001/lists/personal/results
+topic readwrite notepad/v2/devices/tablet-001/lists/work/state
+topic readwrite notepad/v2/devices/tablet-001/lists/work/commands
+topic readwrite notepad/v2/devices/tablet-001/lists/work/results
+topic readwrite notepad/v2/devices/tablet-001/presence
 
 # Simulated tablet for user 1: publish on its own up, read its own down.
 user sim-device-1
 topic write eco/user/1/device/sim-device-1/up
 topic read eco/user/1/device/sim-device-1/down
+
+# Existing ESP32 pad: fixed firmware identity, bound by PAD_USER_ID/PAD_DB.
+user tablet-001
+topic write notepad/v1/devices/tablet-001/commands
+topic write notepad/v1/devices/tablet-001/presence
+topic read notepad/v1/devices/tablet-001/state
+topic read notepad/v1/devices/tablet-001/results
+topic write notepad/v2/devices/tablet-001/lists/personal/commands
+topic write notepad/v2/devices/tablet-001/lists/work/commands
+topic write notepad/v2/devices/tablet-001/presence
+topic read notepad/v2/devices/tablet-001/lists/personal/state
+topic read notepad/v2/devices/tablet-001/lists/work/state
+topic read notepad/v2/devices/tablet-001/lists/personal/results
+topic read notepad/v2/devices/tablet-001/lists/work/results
